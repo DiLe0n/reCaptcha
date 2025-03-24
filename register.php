@@ -2,11 +2,18 @@
 session_start();
 require_once 'config.php';
 
+// Función para limpiar entradas (Protección XSS)
+function limpiarEntrada($dato) {
+    return htmlspecialchars(strip_tags(trim($dato)));
+}
+
+$error = "";
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $username = $_POST['username'];
-    $password = $_POST['password'];
-    $confirmPassword = $_POST['confirm_password'];
-    $email = $_POST['email'];
+    $username = limpiarEntrada($_POST['username']);
+    $password = limpiarEntrada($_POST['password']);
+    $confirm_password = limpiarEntrada($_POST['confirm_password']);
+    $email = limpiarEntrada($_POST['email']);
     $captchaResponse = $_POST['g-recaptcha-response'];
 
     // Verificar el captcha
@@ -15,27 +22,38 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $responseKeys = json_decode($response, true);
     
     if(intval($responseKeys["success"]) !== 1) {
-        echo "Por favor, verifica que no eres un robot.";
+        $error = "Por favor, verifica que no eres un robot.";
     } else {
         // Validar que las contraseñas coincidan
-        if ($password !== $confirmPassword) {
-            echo "Las contraseñas no coinciden.";
+        if ($password !== $confirm_password) {
+            $error = "Las contraseñas no coinciden.";
         } else {
-            // Hashing y salting de la contraseña
-            $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
+    
+            // Verificar si el usuario ya existe
+            $stmt = $pdo->prepare("SELECT id FROM usuarios WHERE username = :username OR email = :email");
+            $stmt->bindParam(':username', $username, PDO::PARAM_STR);
+            $stmt->bindParam(':email', $email, PDO::PARAM_STR);
+            $stmt->execute();
 
-            // Insertar usuario en la base de datos
-            $stmt = $pdo->prepare("INSERT INTO usuarios (username, password_hash, email) VALUES (:username, :password_hash, :email)");
-            $stmt->bindParam(":username", $username);
-            $stmt->bindParam(":password_hash", $hashedPassword);
-            $stmt->bindParam(":email", $email);
-
-            if ($stmt->execute()) {
-                echo "Usuario registrado exitosamente.";
-                $_SESSION['username'] = $username;  // Guardamos el usuario en la sesión
-                header("Location: welcome.php");     // Redirigir al welcome.php
+            if ($stmt->rowCount() > 0) {
+                $error = "Este usuario ya está registrado.";
             } else {
-                echo "Hubo un error al registrar el usuario.";
+                // Hashing y salting de la contraseña
+                $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
+
+                // Insertar usuario en la base de datos
+                $stmt = $pdo->prepare("INSERT INTO usuarios (username, password_hash, email) VALUES (:username, :password_hash, :email)");
+                $stmt->bindParam(":username", $username);
+                $stmt->bindParam(":password_hash", $hashedPassword);
+                $stmt->bindParam(":email", $email);
+
+                if ($stmt->execute()) {
+                    $_SESSION['username'] = $username;  // Guardamos el usuario en la sesión
+                    header("Location: welcome.php");     // Redirigir al welcome.php
+                    exit();
+                } else {
+                    $error = "Hubo un error al registrar el usuario.";
+                }
             }
         }
     }
@@ -83,15 +101,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             color: #555;
         }
 
-        input[type="text"], input[type="password"], input[type="email"] {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 16px;
-            color: #333;
+        input[type="text"],
+        input[type="password"],
+        input[type="email"] {
+            width: calc(100% - 20px); /* Ajusta el ancho para que no toquen los bordes */
+            padding: 12px; /* Espaciado interno */
+            margin-bottom: 15px; /* Espacio entre campos */
+            border: 1px solid #ccc; /* Borde delgado y gris */
+            border-radius: 4px; /* Esquinas redondeadas */
+            font-size: 16px; /* Tamaño del texto */
+            color: #333; /* Color del texto */
+            box-sizing: border-box; /* Incluye padding y border en el tamaño */
         }
+
 
         button {
             width: 100%;
@@ -103,10 +125,39 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             font-size: 16px;
             cursor: pointer;
             margin-top: 10px;
+            text-decoration: none;
         }
 
         button:hover {
             background-color: #45a049;
+        }
+
+        .btn-secondary {
+            display: inline-block; /* Permite aplicar padding y márgenes */
+            margin-top: 15px; /* Espaciado superior */
+            padding: 10px 20px; /* Espaciado interno (vertical, horizontal) */
+            text-decoration: none; /* Quita el subrayado */
+            background-color: #007bff; /* Color azul */
+            color: white; /* Texto en blanco */
+            border-radius: 4px; /* Esquinas redondeadas */
+            text-align: center; /* Centrar el texto */
+            width: calc(100% - 20px); /* Ajustar ancho sin pegarse al borde */
+            box-sizing: border-box; /* Incluye padding y border en el tamaño */
+            transition: background-color 0.3s; /* Efecto suave al pasar el cursor */
+        }
+
+        .btn-secondary:hover {
+            background-color: #1976D2;
+        }
+
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid #f44336;
+            border-radius: 4px;
+            background-color: #ffebee;
+            color: #d32f2f;
+            text-align: left;
         }
 
         .g-recaptcha {
@@ -118,7 +169,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 padding: 20px;
             }
 
-            button {
+            button, .btn-secondary {
                 font-size: 14px;
             }
         }
@@ -127,6 +178,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <body>
     <form action="register.php" method="POST">
         <h2>Registrarse</h2>
+        <?php if (!empty($error)): ?>
+            <div class="alert"><?php echo $error; ?></div>
+        <?php endif; ?>
         <label for="username">Usuario:</label>
         <input type="text" id="username" name="username" required>
         
@@ -142,6 +196,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <div class="g-recaptcha" data-sitekey="6LeCa-IqAAAAAHezv1pHnimAEwdiT52HOV6JlXRM"></div>
         
         <button type="submit">Registrarse</button>
+        <a href="login.php" class="btn-secondary">¿Ya tienes cuenta?</a>
     </form>
 </body>
 </html>

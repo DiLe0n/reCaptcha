@@ -6,6 +6,7 @@ if (!isset($_SESSION['username'])) {
     exit();
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -70,7 +71,7 @@ if (!isset($_SESSION['username'])) {
         <h1>¡Bienvenido!</h1>
         <div class="welcome-message">
             <?php
-                echo "Hola, " . $_SESSION['username'] . "!";
+                echo "Hola, " . htmlspecialchars($_SESSION['username']) . "!";
             ?>
         </div>
         <div class="logout-button">
